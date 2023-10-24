@@ -1,0 +1,277 @@
+---
+title: "Strawberry"
+author: "Yuhan Pu"
+date: '2023-10-16'
+output:
+  pdf_document: default
+  word_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+```{r cars}
+library(knitr)  
+library(tidyverse)
+library(stringr)
+library(dplyr)
+library(readr)
+```
+
+
+```{r}
+strawberry <- read.csv("strawberry.csv")
+```
+
+
+
+```{r}
+strawberry$Value[strawberry$Value==' (D)']<-NA
+strawberry$Value[strawberry$Value==' (NA)']<-NA
+
+```
+
+```{r}
+strawberry$CV....[strawberry$CV....=='(D)']<-NA
+strawberry$CV....[strawberry$CV....=='(H)']<-NA
+
+```
+
+```{r}
+drop_one_value_col <- function(df){
+drop <- NULL
+for(i in 1:dim(df)[2]){
+if((df |> distinct(df[,i]) |> count()) == 1){
+drop = c(drop, i)
+} }
+
+if(is.null(drop)){return("none")}else{
+
+   print("Columns dropped:")
+   print(colnames(df)[drop])
+   strawberry <- df[, -1*drop]
+   }
+}
+
+
+## use the function
+
+strawberry <- drop_one_value_col(strawberry)
+
+drop_one_value_col(strawberry)
+```
+```{r}
+glimpse(strawberry)
+```
+
+```{r}
+state_all <- strawberry |> group_by(State) |> count()
+
+if(sum(state_all$n) == dim(strawberry)[1]){print("Every row has value in the State column.")}
+
+```
+
+```{r}
+strawberry <- strawberry[!is.na(strawberry$Value), ]
+strawberry$Value <- gsub(",", "", strawberry$Value)
+strawberry$Value <- gsub('""', "" , strawberry$Value)
+strawberry$Value<-as.integer(strawberry$Value)
+```
+
+```{r}
+strawberry<-na.omit(strawberry)
+```
+
+
+```{r}
+strwb_census <- strawberry |> filter(Program == "CENSUS")
+
+strwb_survey <- strawberry |> filter(Program == "SURVEY")
+
+## check that all of the rows are accounted for
+
+nrow(strawberry) == (nrow(strwb_census) + nrow(strwb_survey))
+
+## Move marketing-related rows in strw_b_chem 
+## to strw_b_sales
+
+## clean up the environment
+
+```
+
+
+
+```{r}
+strwb_census <- strwb_census |>
+  separate_wider_delim(  cols = `Data.Item`,
+                         delim = ",",
+                         names = c("Fruit",
+                                 "temp1",
+                                 "temp2",
+                                 "temp3"),
+                         too_many = "error",
+                         too_few = "align_start"
+                       )
+```
+
+```{r}
+strwb_census <- strwb_census |>
+  separate_wider_delim(  cols = temp1,
+                         delim = " - ",
+                         names = c("crop_type",
+                                 "prop_acct"),
+                         too_many = "error",
+                         too_few = "align_start"
+                       )
+```
+
+```{r}
+uni<-unique(strwb_survey$Data.Item)
+uni
+```
+
+
+```{r}
+glimpse(strwb_census)
+
+strwb_census$crop_type <- str_trim(strwb_census$crop_type, side = "both")
+
+strwb_census$temp2 <- str_trim(strwb_census$temp2, side = "both")
+
+strwb_census$temp3 <- str_trim(strwb_census$temp3, side = "both")
+```
+
+```{r}
+a <- strwb_census |> distinct(temp2)
+```
+
+```{r}
+strwb_census <- strwb_census |> mutate(`Fresh Market` = temp2, .after = temp2)
+```
+
+```{r}
+strwb_census$`Fresh Market` <- strwb_census$`Fresh Market` |> str_replace( "^MEA.*", "")
+strwb_census$`Fresh Market` <- strwb_census$`Fresh Market` |> str_replace( "^P.*", "")
+```
+
+```{r}
+strwb_census$`Fresh Market`[is.na(strwb_census$`Fresh Market`)] <- ""  
+strwb_census$temp2 <- strwb_census$temp2 |> str_replace("^F.*", "")
+strwb_census$`Fresh Market` <- strwb_census$`Fresh Market` |> str_replace("^FRESH MARKET - ", "")
+
+```
+
+```{r}
+strwb_census <- strwb_census |> mutate(`Process Market` = temp2, .after = temp2)
+strwb_census$`Process Market` <-  strwb_census$`Process Market` |> str_replace("^MEA.*", "")
+strwb_census$`Process Market`[is.na(strwb_census$`Process Market`)] <- ""
+strwb_census$temp2 <- strwb_census$temp2 |> str_replace("^P.*", "")
+strwb_census$`Process Market` <-  strwb_census$`Process Market` |> str_replace("PROCESSING - ", "") 
+
+```
+
+```{r}
+strwb_census <- strwb_census |> unite(temp2, temp3, col="Metric", sep="")
+strwb_census$Metric <- strwb_census$Metric |> str_replace("MEASURED IN ", "")
+strwb_census <- strwb_census |> relocate(Metric, .before = Domain)
+strwb_census <- strwb_census |> relocate(`Process Market`, .before = Metric)
+strwb_census <- strwb_census |> rename(Totals = prop_acct)
+```
+
+```{r}
+vals <- strwb_census$Value
+g1 <- sub(",", "", vals)
+g2 <- gsub(",", "", vals)
+dcomma <- function(c){
+  suppressWarnings({
+  xnew = as.numeric(gsub(",", "", c))
+  fns = unique(c[is.na(xnew)])
+  vtran = list("new_vec" = xnew, "footnotes" = fns)
+  return(vtran)
+  })
+}
+```
+
+First I want to visualize the 'CWT' and '$' of each state
+```{r}
+subset1<-strwb_census%>%filter(Metric=='CWT')
+ggplot(subset1, aes(x = State, y = log10(Value))) +
+  geom_boxplot() +
+  xlab("State") +
+  ylab("Value")
+```
+
+```{r}
+subset2<-strwb_census%>%filter(Metric=='$')
+ggplot(subset2, aes(x = State, y = log10(Value))) +
+  geom_boxplot() +
+  xlab("State") +
+  ylab("Value")
+```
+
+I found for both sales ending in CWT and $ as metric are the highest in California and they are far greater than other states.
+
+I want to make sure the relationship between CV and Value
+```{r}
+ggplot(strwb_census, aes(x = CV...., y = log10(Value))) +
+  geom_point()+
+  xlab("CV") +
+  ylab("log10(Value)")
+```
+It seems like there is no obvious relationship between CV and Value
+
+
+Then I want to show the CV and its related states
+```{r}
+summary_data1 <- strwb_census %>%
+  group_by(State) %>%
+  summarize(mean = mean(as.numeric(CV....)),
+            .groups='drop')
+
+ggplot(summary_data1, aes(x = State, y = mean)) +
+  geom_point()+
+  xlab("State") +
+  ylab("CV")
+```
+I want to select the top 10 states 
+```{r}
+top_10_states <- summary_data1 %>%
+  arrange(desc(mean)) %>%
+  head(10)
+top_10_states
+```
+
+
+Then for strawberry survey, I want to see the mean value based on different chemicals used in Domain.
+```{r}
+summary_data1 <- strwb_survey %>%
+  group_by(Domain,State) %>%
+  summarize(mean = mean(Value),
+            .groups='drop')
+
+ggplot(summary_data1, aes(x = Domain, y = mean, fill = as.factor(State))) +
+  geom_bar(stat = "identity", position = position_dodge(width = 0.8)) +
+  labs(x = "Domain", y = "mean of Value") +
+  scale_fill_discrete(name = "State") +
+  theme_minimal()
+
+```
+
+We found that the value for different domains, the most frequent one is Total, I also want to know the top 10 states 
+
+```{r}
+top_10_states <- summary_data1 %>%
+  arrange(desc(mean)) %>%
+  head(10)
+top_10_states
+```
+
+The conclusion can be that: California always have the largest value and CV.
+
